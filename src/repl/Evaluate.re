@@ -115,6 +115,7 @@ let eval_phrase = phrase => {
 
 let eval =
     (
+	  ~partial=false,
       ~previous=?,
       ~send: Core.Evaluate.result => unit,
       ~complete: evalResult => unit,
@@ -217,6 +218,7 @@ let eval =
     | (_, []) =>
       complete(EvalSuccess(evalId));
       [];
+	| ([], _) when partial => []
     | ([], [phrase, ...tl]) =>
       let result = evaluatePhrase(phrase);
       switch (result) {
@@ -247,7 +249,7 @@ let eval =
         send(previousPhrase.result |> updatePhraseCompilationId(evalId, blockLoc));
         ToploopState.set(previousPhrase.state);
         [previousPhrase, ...loop(previousTail, tl)];
-      } else {
+      } else if (!partial) {
         let result = evaluatePhrase(phrase);
         switch (result) {
         | Ok(v) =>
@@ -265,7 +267,9 @@ let eval =
           complete(EvalError(evalId));
           [];
         };
-      };
+      } else {
+		  [];
+	  }
     };
   };
 
