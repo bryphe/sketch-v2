@@ -208,9 +208,8 @@ let eval =
     | ([previousPhrase, ...previousTail], [phrase, ...tl]) =>
       let s1 = toString(previousPhrase.phrase);
       let s2 = toString(phrase);
-      prerr_endline("s1: " ++ s1 ++ "\ns2: " ++ s2);
+      /* TODO: Is there a better way to compare these? */
       if (String.equal(s1, s2)) {
-        prerr_endline("Using cached state");
         let blockLoc =
           locFromPhrase(previousPhrase.phrase)
           |> Option.flatMap(Core.Loc.toLocation);
