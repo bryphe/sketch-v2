@@ -1,6 +1,14 @@
 open Util;
 open Core.Evaluate;
 
+type evaluationResult = {
+	phrase: Parsetree.toplevel_phrase,
+	result: Core.Evaluate.result,
+	state: ToploopState.t,
+};
+
+type t = list(evaluationResult);
+
 let buffer = Buffer.create(256);
 let ppf = Format.formatter_of_buffer(buffer);
 
@@ -92,20 +100,23 @@ let eval_phrase = phrase => {
 
 let eval =
     (
+	  ~previous=None,
       ~send: Core.Evaluate.result => unit,
       ~complete: evalResult => unit,
       ~readStdout: (module ReadStdout.Sig),
       code: string,
     )
-    : unit => {
+    : t => {
   warnings := [];
+
+  let previous = switch (previous) {
+  | None => []
+  | Some(v) => v
+  };
 
   module ReadStdout = (val readStdout: ReadStdout.Sig);
 
-  let rec loop =
-    fun
-    | [] => complete(EvalSuccess)
-    | [phrase, ...tl] => {
+  let evaluatePhrase = (phrase) => {
         let blockLoc =
           locFromPhrase(phrase) |> Option.flatMap(Core.Loc.toLocation);
 
@@ -116,7 +127,7 @@ let eval =
         /* Get stdout resut and return stdout back */
         let stdout = ReadStdout.stop(capture);
 
-        switch (phrase, evalResult) {
+        let result = switch (phrase, evalResult) {
         | (Parsetree.Ptop_dir(_name, _argument), Ok((_, msg))) =>
           /*
            * Directive result could be from anywhere :(
@@ -124,45 +135,38 @@ let eval =
            * #show_val 1: msg
            */
           switch (stdout, msg) {
-          | ("", "") => ()
+          | ("", "") => Ok(Directive("unknown"))
           | (msg, "")
-          | ("", msg) => send(Directive(msg))
-          | (msg1, msg2) => send(Directive(msg1 ++ "\n" ++ msg2))
+          | ("", msg) => Ok(Directive(msg))
+          | (msg1, msg2) => Ok(Directive(msg1 ++ "\n" ++ msg2))
           };
-          loop(tl);
         | (Parsetree.Ptop_dir(_, _), Error(exn)) =>
           let extractedWarnings = warnings^;
           let {errMsg, _} = Report.reportError(exn);
-          send(Directive(errMsg));
-          /* Ignore directive errors */
-          loop(tl);
+          Ok(Directive(errMsg));
         | (Parsetree.Ptop_def(_), Ok((true, msg))) =>
           let extractedWarnings = warnings^;
-          send(
-            protocolSuccess(
+            Ok(protocolSuccess(
               ~blockLoc,
               ~msg,
               ~warnings=extractedWarnings,
               ~stdout,
-            ),
-          );
-          loop(tl);
+            ));
         | (Parsetree.Ptop_def(_), Ok((false, msg))) =>
           let extractedWarnings = warnings^;
           /* No ideas when this happens */
-          send(
+          Error(
             protocolError(
               ~blockLoc,
               ~error={errMsg: msg, errLoc: None, errSub: []},
               ~warnings=extractedWarnings,
               ~stdout,
-            ),
+            )
           );
-          complete(EvalError);
         | (Parsetree.Ptop_def(_), Error(exn)) =>
           let extractedWarnings = warnings^;
           let error = Report.reportError(exn);
-          send(
+          Error(
             protocolError(
               ~blockLoc,
               ~error,
@@ -170,22 +174,84 @@ let eval =
               ~stdout,
             ),
           );
-          complete(EvalError);
         };
         warnings := [];
+		result
       };
 
-  try (
+  let toString = (v: Parsetree.toplevel_phrase) => {
+	switch (v) {
+	| Parsetree.Ptop_def(structure) => Pprintast.string_of_structure(structure);
+	| Parsetree.Ptop_dir(directive, _) => directive
+	};
+  };
+
+  let rec loop = (previousPhrases, phrases) => {
+	switch ((previousPhrases, phrases)) {
+    | (_, []) => 
+		complete(EvalSuccess);
+		[];
+	| ([], [phrase, ...tl]) => {
+			let result = evaluatePhrase(phrase);
+			switch (result) {
+			| Ok(v) => 
+					let evalResult = {
+						phrase,
+						result: v,
+						state: ToploopState.get(),
+
+				};
+				send(v);
+				[evalResult, ...loop([], tl)]
+			| Error(v) => {
+				send(v);
+				complete(EvalError);
+				[]
+				}
+			}
+	}
+    | ([previousPhrase, ...previousTail], [phrase, ...tl]) => {
+		let s1 = toString(previousPhrase.phrase);
+		let s2 = toString(phrase);
+		if (String.equal(s1, s2)) {
+			ToploopState.set(previousPhrase.state);
+			[previousPhrase, ...loop(previousTail, tl)];
+		} else {
+			let result = evaluatePhrase(phrase);
+			switch (result) {
+			| Ok(v) => send(v);
+					let evalResult = {
+						phrase,
+						result: v,
+						state: ToploopState.get(),
+
+				};
+				send(v);
+				[evalResult, ...loop([], tl)]
+			| Error(v) => {
+				send(v);
+				complete(EvalError);
+				[]
+				}
+			}
+			};
+      };
+	};
+  };
+
+  let result = try (
     {
       let filename = "//toplevel//";
       let lexbuf = Lexing.from_string(code);
       Location.init(lexbuf, filename);
       Location.input_name := filename;
       Location.input_lexbuf := Some(lexbuf);
-      loop(Toploop.parse_use_file^(lexbuf));
+      loop([], Toploop.parse_use_file^(lexbuf));
     }
   ) {
-  | Sys.Break => complete(EvalInterupted)
+  | Sys.Break => 
+		complete(EvalInterupted)
+		previous
   | exn =>
     let extractedWarnings = warnings^;
     let error = Report.reportError(exn);
@@ -199,5 +265,7 @@ let eval =
     );
     warnings := [];
     complete(EvalError);
+	previous;
   };
+  result;
 };
