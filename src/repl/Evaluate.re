@@ -264,6 +264,5 @@ let eval =
       complete(EvalError);
       previous;
     };
-  prerr_endline("LENGTH: " ++ string_of_int(List.length(result)));
   result;
 };
