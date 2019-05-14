@@ -41,9 +41,9 @@ let protocolError = (~blockLoc, ~error, ~warnings, ~stdout, ~evalId) =>
     evalId,
   });
 
-let updatePhraseCompilationId = (evalId, phrase) =>
+let updatePhraseCompilationId = (evalId, blockLoc, phrase) =>
   switch (phrase) {
-  | Phrase(p) => Phrase({...p, evalId, cached: true})
+  | Phrase(p) => Phrase({...p, evalId, cached: true, blockLoc})
   | Directive(a, _) => Directive(a, evalId)
   };
 
@@ -244,7 +244,7 @@ let eval =
           |> Option.flatMap(Core.Loc.toLocation);
 
         send(protocolStart(~blockLoc, ~cached=true, ~evalId));
-        send(previousPhrase.result |> updatePhraseCompilationId(evalId));
+        send(previousPhrase.result |> updatePhraseCompilationId(evalId, blockLoc));
         ToploopState.set(previousPhrase.state);
         [previousPhrase, ...loop(previousTail, tl)];
       } else {
