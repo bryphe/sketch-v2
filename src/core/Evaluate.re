@@ -8,8 +8,6 @@ type error = {
   errSub: sub,
 };
 
-
-
 [@deriving show]
 type warning = {
   warnLoc: option(Loc.t),
@@ -18,7 +16,8 @@ type warning = {
   warnSub: sub,
 };
 
-
+[@deriving show]
+type evalId = int;
 
 [@deriving show]
 type blockContent =
@@ -39,10 +38,12 @@ type result =
   | Phrase{
       blockLoc: option(Loc.t),
       blockContent,
+      evalId,
+      cached: bool,
     }
-  | Directive(string);
+  | Directive(string, evalId);
 
 type evalResult =
-  | EvalSuccess
-  | EvalError
-  | EvalInterupted;
+  | EvalSuccess(evalId)
+  | EvalError(evalId)
+  | EvalInterupted(evalId);
