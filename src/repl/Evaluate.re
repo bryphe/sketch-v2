@@ -2,9 +2,9 @@ open Util;
 open Core.Evaluate;
 
 type evaluationResult = {
-	phrase: Parsetree.toplevel_phrase,
-	result: Core.Evaluate.result,
-	state: ToploopState.t,
+  phrase: Parsetree.toplevel_phrase,
+  result: Core.Evaluate.result,
+  state: ToploopState.t,
 };
 
 type t = list(evaluationResult);
@@ -17,10 +17,8 @@ let ppf = Format.formatter_of_buffer(buffer);
 /** {2 Communication} */;
 
 /** {2 Communication} */;
-let protocolStart =  (~blockLoc) => Phrase({
-  blockLoc,
-  blockContent: BlockStart
-});
+let protocolStart = (~blockLoc) =>
+  Phrase({blockLoc, blockContent: BlockStart});
 
 let protocolSuccess = (~blockLoc, ~msg, ~warnings, ~stdout) =>
   Phrase({
@@ -29,10 +27,7 @@ let protocolSuccess = (~blockLoc, ~msg, ~warnings, ~stdout) =>
   });
 
 let protocolError = (~blockLoc, ~error, ~warnings, ~stdout) =>
-  Phrase({
-    blockLoc,
-    blockContent: BlockError({error, warnings, stdout}),
-  });
+  Phrase({blockLoc, blockContent: BlockError({error, warnings, stdout})});
 
 /** {2 Execution} */;
 
@@ -102,7 +97,7 @@ let eval_phrase = phrase => {
 
 let eval =
     (
-	  ~previous=?,
+      ~previous=?,
       ~send: Core.Evaluate.result => unit,
       ~complete: evalResult => unit,
       ~readStdout: (module ReadStdout.Sig),
@@ -111,171 +106,165 @@ let eval =
     : t => {
   warnings := [];
 
-  let previous = switch (previous) {
-  | None => []
-  | Some(v) => v
-  };
+  let previous =
+    switch (previous) {
+    | None => []
+    | Some(v) => v
+    };
 
   module ReadStdout = (val readStdout: ReadStdout.Sig);
 
-  let evaluatePhrase = (phrase) => {
-        let blockLoc =
-          locFromPhrase(phrase) |> Option.flatMap(Core.Loc.toLocation);
+  let evaluatePhrase = phrase => {
+    let blockLoc =
+      locFromPhrase(phrase) |> Option.flatMap(Core.Loc.toLocation);
 
-        send(protocolStart(~blockLoc));
-        /* Redirect stdout */
-        let capture = ReadStdout.start();
-        let evalResult = eval_phrase(phrase);
-        /* Get stdout resut and return stdout back */
-        let stdout = ReadStdout.stop(capture);
+    send(protocolStart(~blockLoc));
+    /* Redirect stdout */
+    let capture = ReadStdout.start();
+    let evalResult = eval_phrase(phrase);
+    /* Get stdout resut and return stdout back */
+    let stdout = ReadStdout.stop(capture);
 
-        let result = switch (phrase, evalResult) {
-        | (Parsetree.Ptop_dir(_name, _argument), Ok((_, msg))) =>
-          /*
-           * Directive result could be from anywhere :(
-           * #help: stdout
-           * #show_val 1: msg
-           */
-          switch (stdout, msg) {
-          | ("", "") => Ok(Directive("unknown"))
-          | (msg, "")
-          | ("", msg) => Ok(Directive(msg))
-          | (msg1, msg2) => Ok(Directive(msg1 ++ "\n" ++ msg2))
-          };
-        | (Parsetree.Ptop_dir(_, _), Error(exn)) =>
-          let extractedWarnings = warnings^;
-          let {errMsg, _} = Report.reportError(exn);
-          Ok(Directive(errMsg));
-        | (Parsetree.Ptop_def(_), Ok((true, msg))) =>
-          let extractedWarnings = warnings^;
-            Ok(protocolSuccess(
-              ~blockLoc,
-              ~msg,
-              ~warnings=extractedWarnings,
-              ~stdout,
-            ));
-        | (Parsetree.Ptop_def(_), Ok((false, msg))) =>
-          let extractedWarnings = warnings^;
-          /* No ideas when this happens */
-          Error(
-            protocolError(
-              ~blockLoc,
-              ~error={errMsg: msg, errLoc: None, errSub: []},
-              ~warnings=extractedWarnings,
-              ~stdout,
-            )
-          );
-        | (Parsetree.Ptop_def(_), Error(exn)) =>
-          let extractedWarnings = warnings^;
-          let error = Report.reportError(exn);
-          Error(
-            protocolError(
-              ~blockLoc,
-              ~error,
-              ~warnings=extractedWarnings,
-              ~stdout,
-            ),
-          );
-        };
-        warnings := [];
-		result
+    let result =
+      switch (phrase, evalResult) {
+      | (Parsetree.Ptop_dir(_name, _argument), Ok((_, msg))) =>
+        /*
+         * Directive result could be from anywhere :(
+         * #help: stdout
+         * #show_val 1: msg
+         */
+        switch (stdout, msg) {
+        | ("", "") => Ok(Directive("unknown"))
+        | (msg, "")
+        | ("", msg) => Ok(Directive(msg))
+        | (msg1, msg2) => Ok(Directive(msg1 ++ "\n" ++ msg2))
+        }
+      | (Parsetree.Ptop_dir(_, _), Error(exn)) =>
+        let extractedWarnings = warnings^;
+        let {errMsg, _} = Report.reportError(exn);
+        Ok(Directive(errMsg));
+      | (Parsetree.Ptop_def(_), Ok((true, msg))) =>
+        let extractedWarnings = warnings^;
+        Ok(
+          protocolSuccess(
+            ~blockLoc,
+            ~msg,
+            ~warnings=extractedWarnings,
+            ~stdout,
+          ),
+        );
+      | (Parsetree.Ptop_def(_), Ok((false, msg))) =>
+        let extractedWarnings = warnings^;
+        /* No ideas when this happens */
+        Error(
+          protocolError(
+            ~blockLoc,
+            ~error={errMsg: msg, errLoc: None, errSub: []},
+            ~warnings=extractedWarnings,
+            ~stdout,
+          ),
+        );
+      | (Parsetree.Ptop_def(_), Error(exn)) =>
+        let extractedWarnings = warnings^;
+        let error = Report.reportError(exn);
+        Error(
+          protocolError(
+            ~blockLoc,
+            ~error,
+            ~warnings=extractedWarnings,
+            ~stdout,
+          ),
+        );
       };
+    warnings := [];
+    result;
+  };
 
   let toString = (v: Parsetree.toplevel_phrase) => {
-	switch (v) {
-	| Parsetree.Ptop_def(structure) => Pprintast.string_of_structure(structure);
-	| Parsetree.Ptop_dir(directive, _) => directive
-	};
+    switch (v) {
+    | Parsetree.Ptop_def(structure) =>
+      Pprintast.string_of_structure(structure)
+    | Parsetree.Ptop_dir(directive, _) => directive
+    };
   };
 
   let rec loop = (previousPhrases, phrases) => {
-	switch ((previousPhrases, phrases)) {
-    | (_, []) => 
-		complete(EvalSuccess);
-		[];
-	| ([], [phrase, ...tl]) => {
-			let result = evaluatePhrase(phrase);
-			switch (result) {
-			| Ok(v) => 
-					let evalResult = {
-						phrase,
-						result: v,
-						state: ToploopState.get(),
-
-				};
-				send(v);
-				[evalResult, ...loop([], tl)]
-			| Error(v) => {
-				send(v);
-				complete(EvalError);
-				[]
-				}
-			}
-	}
-    | ([previousPhrase, ...previousTail], [phrase, ...tl]) => {
-		let s1 = toString(previousPhrase.phrase);
-		let s2 = toString(phrase);
-		prerr_endline ("s1: " ++ s1 ++ "\ns2: " ++ s2);
-		if (String.equal(s1, s2)) {
-			prerr_endline ("Using cached state");
+    switch (previousPhrases, phrases) {
+    | (_, []) =>
+      complete(EvalSuccess);
+      [];
+    | ([], [phrase, ...tl]) =>
+      let result = evaluatePhrase(phrase);
+      switch (result) {
+      | Ok(v) =>
+        let evalResult = {phrase, result: v, state: ToploopState.get()};
+        send(v);
+        [evalResult, ...loop([], tl)];
+      | Error(v) =>
+        send(v);
+        complete(EvalError);
+        [];
+      };
+    | ([previousPhrase, ...previousTail], [phrase, ...tl]) =>
+      let s1 = toString(previousPhrase.phrase);
+      let s2 = toString(phrase);
+      prerr_endline("s1: " ++ s1 ++ "\ns2: " ++ s2);
+      if (String.equal(s1, s2)) {
+        prerr_endline("Using cached state");
         let blockLoc =
-          locFromPhrase(previousPhrase.phrase) |> Option.flatMap(Core.Loc.toLocation);
+          locFromPhrase(previousPhrase.phrase)
+          |> Option.flatMap(Core.Loc.toLocation);
 
         send(protocolStart(~blockLoc));
-			send(previousPhrase.result);
-			ToploopState.set(previousPhrase.state);
-			[previousPhrase, ...loop(previousTail, tl)];
-		} else {
-			let result = evaluatePhrase(phrase);
-			switch (result) {
-			| Ok(v) => send(v);
-					let evalResult = {
-						phrase,
-						result: v,
-						state: ToploopState.get(),
-
-				};
-				send(v);
-				[evalResult, ...loop([], tl)]
-			| Error(v) => {
-				send(v);
-				complete(EvalError);
-				[]
-				}
-			}
-			};
+        send(previousPhrase.result);
+        ToploopState.set(previousPhrase.state);
+        [previousPhrase, ...loop(previousTail, tl)];
+      } else {
+        let result = evaluatePhrase(phrase);
+        switch (result) {
+        | Ok(v) =>
+          send(v);
+          let evalResult = {phrase, result: v, state: ToploopState.get()};
+          send(v);
+          [evalResult, ...loop([], tl)];
+        | Error(v) =>
+          send(v);
+          complete(EvalError);
+          [];
+        };
       };
-	};
+    };
   };
 
-  let result = try (
-    {
-      let filename = "//toplevel//";
-      let lexbuf = Lexing.from_string(code);
-      Location.init(lexbuf, filename);
-      Location.input_name := filename;
-      Location.input_lexbuf := Some(lexbuf);
-      loop(previous, Toploop.parse_use_file^(lexbuf));
-    }
-  ) {
-  | Sys.Break => 
-		complete(EvalInterupted)
-		previous
-  | exn =>
-    let extractedWarnings = warnings^;
-    let error = Report.reportError(exn);
-    send(
-      protocolError(
-        ~blockLoc=None,
-        ~error,
-        ~warnings=extractedWarnings,
-        ~stdout="",
-      ),
-    );
-    warnings := [];
-    complete(EvalError);
-	previous;
-  };
-		prerr_endline ("LENGTH: " ++ string_of_int(List.length(result)));
+  let result =
+    try (
+      {
+        let filename = "//toplevel//";
+        let lexbuf = Lexing.from_string(code);
+        Location.init(lexbuf, filename);
+        Location.input_name := filename;
+        Location.input_lexbuf := Some(lexbuf);
+        loop(previous, Toploop.parse_use_file^(lexbuf));
+      }
+    ) {
+    | Sys.Break =>
+      complete(EvalInterupted);
+      previous;
+    | exn =>
+      let extractedWarnings = warnings^;
+      let error = Report.reportError(exn);
+      send(
+        protocolError(
+          ~blockLoc=None,
+          ~error,
+          ~warnings=extractedWarnings,
+          ~stdout="",
+        ),
+      );
+      warnings := [];
+      complete(EvalError);
+      previous;
+    };
+  prerr_endline("LENGTH: " ++ string_of_int(List.length(result)));
   result;
 };

@@ -65,7 +65,7 @@ let error =
       }),
   });
 };
-describe("incremental test test", ({test, _}) => {
+describe("incremental test test", ({test, _}) =>
   test("single line, multiple phrases", ({expect}) => {
     initialize();
 
@@ -75,17 +75,19 @@ describe("incremental test test", ({test, _}) => {
     let mock = Mock.mock1(_ => ());
     let mockComplete = Mock.mock1(_ => ());
 
-    let previous = eval(
-      ~send=Mock.fn(mock0),
-      ~complete=Mock.fn(mockComplete0),
-      "let x = 1; let y = x + 1;",
-    );
-    let _ = eval(
-	  ~previous,
-      ~send=Mock.fn(mock),
-      ~complete=Mock.fn(mockComplete),
-      "let x = 1; let y = x + 1; let z = y + 1;",
-    );
+    let previous =
+      eval(
+        ~send=Mock.fn(mock0),
+        ~complete=Mock.fn(mockComplete0),
+        "let x = 1; let y = x + 1;",
+      );
+    let _ =
+      eval(
+        ~previous,
+        ~send=Mock.fn(mock),
+        ~complete=Mock.fn(mockComplete),
+        "let x = 1; let y = x + 1; let z = y + 1;",
+      );
     /* Inspect overal result */
     expect.mock(mockComplete).toBeCalledTimes(1);
     expect.mock(mockComplete).toBeCalledWith(EvalSuccess);
@@ -105,8 +107,8 @@ describe("incremental test test", ({test, _}) => {
       List.nth(calls, 5),
       success("let z: int = 3;", (0, 26), (0, 38)),
     );
-  });
-});
+  })
+);
 
 describe("success test", ({test, _}) => {
   test("single line, multiple phrases", ({expect}) => {
@@ -313,7 +315,7 @@ describe("stdout", ({test, _}) =>
     expect.mock(mockComplete).toBeCalledWith(EvalSuccess);
     /* Inspect each block calls */
     expect.mock(mock).toBeCalledTimes(2);
-	
+
     let calls = Mock.getCalls(mock) |> List.rev;
     expect.equal(
       List.nth(calls, 1),
@@ -355,7 +357,9 @@ describe("directives", ({test, _}) => {
     expect.mock(mockComplete).toBeCalledTimes(1);
     expect.mock(mockComplete).toBeCalledWith(EvalSuccess);
     /* Inspect each block calls */
-    expect.mock(mock).toBeCalledWith(Directive("Wrong type of argument for directive `show_val'.\n"));
+    expect.mock(mock).toBeCalledWith(
+      Directive("Wrong type of argument for directive `show_val'.\n"),
+    );
   });
 
   test("directive with error", ({expect}) => {
