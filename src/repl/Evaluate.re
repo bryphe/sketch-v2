@@ -115,7 +115,7 @@ let eval_phrase = phrase => {
 
 let eval =
     (
-	  ~partial=false,
+      ~partial=false,
       ~previous=?,
       ~send: Core.Evaluate.result => unit,
       ~complete: evalResult => unit,
@@ -218,7 +218,7 @@ let eval =
     | (_, []) =>
       complete(EvalSuccess(evalId));
       [];
-	| ([], _) when partial => []
+    | ([], _) when partial => []
     | ([], [phrase, ...tl]) =>
       let result = evaluatePhrase(phrase);
       switch (result) {
@@ -246,7 +246,9 @@ let eval =
           |> Option.flatMap(Core.Loc.toLocation);
 
         send(protocolStart(~blockLoc, ~cached=true, ~evalId));
-        send(previousPhrase.result |> updatePhraseCompilationId(evalId, blockLoc));
+        send(
+          previousPhrase.result |> updatePhraseCompilationId(evalId, blockLoc),
+        );
         ToploopState.set(previousPhrase.state);
         [previousPhrase, ...loop(previousTail, tl)];
       } else if (!partial) {
@@ -268,8 +270,8 @@ let eval =
           [];
         };
       } else {
-		  [];
-	  }
+        [];
+      };
     };
   };
 
