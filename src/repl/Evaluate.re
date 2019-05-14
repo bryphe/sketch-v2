@@ -100,7 +100,7 @@ let eval_phrase = phrase => {
 
 let eval =
     (
-	  ~previous=None,
+	  ~previous=?,
       ~send: Core.Evaluate.result => unit,
       ~complete: evalResult => unit,
       ~readStdout: (module ReadStdout.Sig),
@@ -213,7 +213,14 @@ let eval =
     | ([previousPhrase, ...previousTail], [phrase, ...tl]) => {
 		let s1 = toString(previousPhrase.phrase);
 		let s2 = toString(phrase);
+		prerr_endline ("s1: " ++ s1 ++ "\ns2: " ++ s2);
 		if (String.equal(s1, s2)) {
+			prerr_endline ("Using cached state");
+        let blockLoc =
+          locFromPhrase(previousPhrase.phrase) |> Option.flatMap(Core.Loc.toLocation);
+
+        send(protocolStart(~blockLoc));
+			send(previousPhrase.result);
 			ToploopState.set(previousPhrase.state);
 			[previousPhrase, ...loop(previousTail, tl)];
 		} else {
@@ -246,7 +253,7 @@ let eval =
       Location.init(lexbuf, filename);
       Location.input_name := filename;
       Location.input_lexbuf := Some(lexbuf);
-      loop([], Toploop.parse_use_file^(lexbuf));
+      loop(previous, Toploop.parse_use_file^(lexbuf));
     }
   ) {
   | Sys.Break => 
@@ -267,5 +274,6 @@ let eval =
     complete(EvalError);
 	previous;
   };
+		prerr_endline ("LENGTH: " ++ string_of_int(List.length(result)));
   result;
 };

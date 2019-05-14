@@ -65,6 +65,48 @@ let error =
       }),
   });
 };
+describe("incremental test test", ({test, _}) => {
+  test("single line, multiple phrases", ({expect}) => {
+    initialize();
+
+    let mock0 = Mock.mock1(_ => ());
+    let mockComplete0 = Mock.mock1(_ => ());
+
+    let mock = Mock.mock1(_ => ());
+    let mockComplete = Mock.mock1(_ => ());
+
+    let previous = eval(
+      ~send=Mock.fn(mock0),
+      ~complete=Mock.fn(mockComplete0),
+      "let x = 1; let y = x + 1;",
+    );
+    let _ = eval(
+	  ~previous,
+      ~send=Mock.fn(mock),
+      ~complete=Mock.fn(mockComplete),
+      "let x = 1; let y = x + 1; let z = y + 1;",
+    );
+    /* Inspect overal result */
+    expect.mock(mockComplete).toBeCalledTimes(1);
+    expect.mock(mockComplete).toBeCalledWith(EvalSuccess);
+    /* Inspect each block calls */
+    expect.mock(mock).toBeCalledTimes(6);
+    let calls = Mock.getCalls(mock) |> List.rev;
+
+    expect.equal(
+      List.nth(calls, 1),
+      success("let x: int = 1;", (0, 0), (0, 8)),
+    );
+    expect.equal(
+      List.nth(calls, 3),
+      success("let y: int = 2;", (0, 11), (0, 23)),
+    );
+    expect.equal(
+      List.nth(calls, 5),
+      success("let z: int = 3;", (0, 26), (0, 38)),
+    );
+  });
+});
 
 describe("success test", ({test, _}) => {
   test("single line, multiple phrases", ({expect}) => {
