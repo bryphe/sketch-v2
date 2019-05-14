@@ -1,5 +1,7 @@
 type t;
 
+let empty: t;
+
 let eval:
   (
 	~previous:t=?,

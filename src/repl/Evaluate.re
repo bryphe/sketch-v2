@@ -9,6 +9,8 @@ type evaluationResult = {
 
 type t = list(evaluationResult);
 
+let empty: t = [];
+
 let buffer = Buffer.create(256);
 let ppf = Format.formatter_of_buffer(buffer);
 

@@ -1,18 +1,16 @@
 type t = {
 	env: Env.t,
-	value: string
+	value: Obj.t,
 };
-
-let flags = [Marshal.Closures];
 
 let get = () => {
 	{
 		env: Toploop.toplevel_env^,
-		value: Marshal.to_string(Toploop.toplevel_value_bindings^, flags),
+		value: Obj.magic(Toploop.toplevel_value_bindings^),
 	};
 };
 
 let set = ({env, value}) => {
 	Toploop.toplevel_env := env;
-	Toploop.toplevel_value_bindings := Marshal.from_string(value, 0);
+	Toploop.toplevel_value_bindings := Obj.magic(value);
 };
