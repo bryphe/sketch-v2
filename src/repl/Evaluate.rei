@@ -11,3 +11,5 @@ let eval:
     string
   ) =>
   t;
+
+let getNextEvalId: unit => Core.Evaluate.evalId;

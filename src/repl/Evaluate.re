@@ -1,7 +1,12 @@
 open Util;
 open Core.Evaluate;
 
+let lastEvalId = ref(0);
+
+let getNextEvalId = () => lastEvalId^ + 1;
+
 type evaluationResult = {
+  evalId,
   phrase: Parsetree.toplevel_phrase,
   result: Core.Evaluate.result,
   state: ToploopState.t,
@@ -17,17 +22,30 @@ let ppf = Format.formatter_of_buffer(buffer);
 /** {2 Communication} */;
 
 /** {2 Communication} */;
-let protocolStart = (~blockLoc) =>
-  Phrase({blockLoc, blockContent: BlockStart});
+let protocolStart = (~blockLoc, ~evalId, ~cached) =>
+  Phrase({blockLoc, blockContent: BlockStart, evalId, cached});
 
-let protocolSuccess = (~blockLoc, ~msg, ~warnings, ~stdout) =>
+let protocolSuccess = (~blockLoc, ~msg, ~warnings, ~stdout, ~evalId) =>
   Phrase({
     blockLoc,
     blockContent: BlockSuccess({msg: msg |> String.trim, warnings, stdout}),
+    cached: false,
+    evalId,
   });
 
-let protocolError = (~blockLoc, ~error, ~warnings, ~stdout) =>
-  Phrase({blockLoc, blockContent: BlockError({error, warnings, stdout})});
+let protocolError = (~blockLoc, ~error, ~warnings, ~stdout, ~evalId) =>
+  Phrase({
+    blockLoc,
+    blockContent: BlockError({error, warnings, stdout}),
+    cached: false,
+    evalId,
+  });
+
+let updatePhraseCompilationId = (evalId, phrase) =>
+  switch (phrase) {
+  | Phrase(p) => Phrase({...p, evalId, cached: true})
+  | Directive(a, _) => Directive(a, evalId)
+  };
 
 /** {2 Execution} */;
 
@@ -106,6 +124,9 @@ let eval =
     : t => {
   warnings := [];
 
+  incr(lastEvalId);
+  let evalId = lastEvalId^;
+
   let previous =
     switch (previous) {
     | None => []
@@ -118,7 +139,7 @@ let eval =
     let blockLoc =
       locFromPhrase(phrase) |> Option.flatMap(Core.Loc.toLocation);
 
-    send(protocolStart(~blockLoc));
+    send(protocolStart(~blockLoc, ~evalId, ~cached=false));
     /* Redirect stdout */
     let capture = ReadStdout.start();
     let evalResult = eval_phrase(phrase);
@@ -134,15 +155,15 @@ let eval =
          * #show_val 1: msg
          */
         switch (stdout, msg) {
-        | ("", "") => Ok(Directive("unknown"))
+        | ("", "") => Ok(Directive("unknown", evalId))
         | (msg, "")
-        | ("", msg) => Ok(Directive(msg))
-        | (msg1, msg2) => Ok(Directive(msg1 ++ "\n" ++ msg2))
+        | ("", msg) => Ok(Directive(msg, evalId))
+        | (msg1, msg2) => Ok(Directive(msg1 ++ "\n" ++ msg2, evalId))
         }
       | (Parsetree.Ptop_dir(_, _), Error(exn)) =>
         let extractedWarnings = warnings^;
         let {errMsg, _} = Report.reportError(exn);
-        Ok(Directive(errMsg));
+        Ok(Directive(errMsg, evalId));
       | (Parsetree.Ptop_def(_), Ok((true, msg))) =>
         let extractedWarnings = warnings^;
         Ok(
@@ -151,6 +172,7 @@ let eval =
             ~msg,
             ~warnings=extractedWarnings,
             ~stdout,
+            ~evalId,
           ),
         );
       | (Parsetree.Ptop_def(_), Ok((false, msg))) =>
@@ -162,6 +184,7 @@ let eval =
             ~error={errMsg: msg, errLoc: None, errSub: []},
             ~warnings=extractedWarnings,
             ~stdout,
+            ~evalId,
           ),
         );
       | (Parsetree.Ptop_def(_), Error(exn)) =>
@@ -173,6 +196,7 @@ let eval =
             ~error,
             ~warnings=extractedWarnings,
             ~stdout,
+            ~evalId,
           ),
         );
       };
@@ -191,18 +215,23 @@ let eval =
   let rec loop = (previousPhrases, phrases) => {
     switch (previousPhrases, phrases) {
     | (_, []) =>
-      complete(EvalSuccess);
+      complete(EvalSuccess(evalId));
       [];
     | ([], [phrase, ...tl]) =>
       let result = evaluatePhrase(phrase);
       switch (result) {
       | Ok(v) =>
-        let evalResult = {phrase, result: v, state: ToploopState.get()};
+        let evalResult = {
+          phrase,
+          result: v,
+          state: ToploopState.get(),
+          evalId,
+        };
         send(v);
         [evalResult, ...loop([], tl)];
       | Error(v) =>
         send(v);
-        complete(EvalError);
+        complete(EvalError(evalId));
         [];
       };
     | ([previousPhrase, ...previousTail], [phrase, ...tl]) =>
@@ -214,8 +243,8 @@ let eval =
           locFromPhrase(previousPhrase.phrase)
           |> Option.flatMap(Core.Loc.toLocation);
 
-        send(protocolStart(~blockLoc));
-        send(previousPhrase.result);
+        send(protocolStart(~blockLoc, ~cached=true, ~evalId));
+        send(previousPhrase.result |> updatePhraseCompilationId(evalId));
         ToploopState.set(previousPhrase.state);
         [previousPhrase, ...loop(previousTail, tl)];
       } else {
@@ -223,12 +252,17 @@ let eval =
         switch (result) {
         | Ok(v) =>
           send(v);
-          let evalResult = {phrase, result: v, state: ToploopState.get()};
+          let evalResult = {
+            phrase,
+            result: v,
+            state: ToploopState.get(),
+            evalId,
+          };
           send(v);
           [evalResult, ...loop([], tl)];
         | Error(v) =>
           send(v);
-          complete(EvalError);
+          complete(EvalError(evalId));
           [];
         };
       };
@@ -247,7 +281,7 @@ let eval =
       }
     ) {
     | Sys.Break =>
-      complete(EvalInterupted);
+      complete(EvalInterupted(evalId));
       previous;
     | exn =>
       let extractedWarnings = warnings^;
@@ -258,10 +292,11 @@ let eval =
           ~error,
           ~warnings=extractedWarnings,
           ~stdout="",
+          ~evalId,
         ),
       );
       warnings := [];
-      complete(EvalError);
+      complete(EvalError(evalId));
       previous;
     };
   result;
